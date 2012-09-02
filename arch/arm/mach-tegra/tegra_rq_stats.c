@@ -9,16 +9,11 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
- *
  */
 /*
- * HTC Sleep/Run queue Stats Interface for Userspace
+ * Qualcomm MSM Runqueue Stats Interface for Userspace
+ * HTC modify for Tegra Runqueue Stats
  */
-
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -26,33 +21,16 @@
 #include <linux/cpu.h>
 #include <linux/kobject.h>
 #include <linux/sysfs.h>
-#include <linux/cpufreq.h>
 #include <linux/notifier.h>
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 #include <linux/sched.h>
 #include <linux/spinlock.h>
-#include <linux/cpu_debug.h>
+#include <linux/rq_stats.h>
 
-#include "cpuidle.h"
-
-struct rq_data {
-	unsigned int rq_avg;
-	unsigned int rq_poll_ms;
-	unsigned int def_timer_ms;
-	unsigned int def_interval;
-	int64_t last_time;
-	int64_t total_time;
-	int64_t def_start_time;
-	struct delayed_work rq_work;
-	struct attribute_group *attr_group;
-	struct kobject *kobj;
-	struct delayed_work def_timer_work;
-};
-
-static struct rq_data rq_info;
-static DEFINE_SPINLOCK(rq_lock);
-static struct workqueue_struct *rq_wq;
+#define MAX_LONG_SIZE 24
+#define DEFAULT_RQ_POLL_JIFFIES 1
+#define DEFAULT_DEF_TIMER_JIFFIES 5
 
 unsigned int get_rq_info(void)
 {
@@ -75,17 +53,14 @@ unsigned int set_rq_poll_ms(unsigned int poll_ms)
 	unsigned long flags = 0;
 	static DEFINE_MUTEX(lock_poll_ms);
 
+	if (poll_ms < 0)
+		return 0;
+
 	mutex_lock(&lock_poll_ms);
 
 	spin_lock_irqsave(&rq_lock, flags);
-	rq_info.rq_poll_ms = poll_ms;
+	rq_info.rq_poll_jiffies = msecs_to_jiffies(poll_ms);
 	spin_unlock_irqrestore(&rq_lock, flags);
-
-	if (poll_ms <= 0)
-		cancel_delayed_work(&rq_info.rq_work);
-	else
-		queue_delayed_work_on(0, rq_wq, &rq_info.rq_work,
-				msecs_to_jiffies(poll_ms));
 
 	mutex_unlock(&lock_poll_ms);
 
@@ -99,52 +74,12 @@ unsigned int get_rq_poll_ms(void)
 	unsigned long flags = 0;
 
 	spin_lock_irqsave(&rq_lock, flags);
-	ret = rq_info.rq_poll_ms;
+	ret = jiffies_to_msecs(rq_info.rq_poll_jiffies);
 	spin_unlock_irqrestore(&rq_lock, flags);
 
 	return ret;
 }
 EXPORT_SYMBOL(get_rq_poll_ms);
-
-static void rq_work_fn(struct work_struct *work)
-{
-	int64_t time_diff = 0;
-	int64_t rq_avg = 0;
-	unsigned long flags = 0;
-
-	spin_lock_irqsave(&rq_lock, flags);
-
-	if (!rq_info.last_time)
-		rq_info.last_time = ktime_to_ns(ktime_get());
-	if (!rq_info.rq_avg)
-		rq_info.total_time = 0;
-
-	rq_avg = nr_running() * 10;
-	time_diff = ktime_to_ns(ktime_get()) - rq_info.last_time;
-	do_div(time_diff, (1000 * 1000));
-
-	if (time_diff && rq_info.total_time) {
-		rq_avg = (rq_avg * time_diff) +
-			(rq_info.rq_avg * rq_info.total_time);
-		do_div(rq_avg, rq_info.total_time + time_diff);
-	}
-
-	rq_info.rq_avg =  (unsigned int)rq_avg;
-
-	/* Set the next poll */
-	if (rq_info.rq_poll_ms)
-		queue_delayed_work_on(0, rq_wq, &rq_info.rq_work,
-			msecs_to_jiffies(rq_info.rq_poll_ms));
-
-	rq_info.total_time += time_diff;
-	rq_info.last_time = ktime_to_ns(ktime_get());
-
-	spin_unlock_irqrestore(&rq_lock, flags);
-
-	CPU_DEBUG_PRINTK(CPU_DEBUG_RQ,
-			 " func rq_avg is %u, total_time=%lld",
-			 (unsigned int)rq_avg, rq_info.total_time);
-}
 
 static void def_work_fn(struct work_struct *work)
 {
@@ -170,26 +105,28 @@ static ssize_t show_run_queue_avg(struct kobject *kobj,
 	rq_info.rq_avg = 0;
 	spin_unlock_irqrestore(&rq_lock, flags);
 
-	return sprintf(buf, "%d.%d\n", val/10, val%10);
+	return snprintf(buf, PAGE_SIZE, "%d.%d\n", val/10, val%10);
 }
 
 static ssize_t show_run_queue_poll_ms(struct kobject *kobj,
-		struct kobj_attribute *attr, char *buf)
+				      struct kobj_attribute *attr, char *buf)
 {
 	int ret = 0;
 	unsigned long flags = 0;
 
 	spin_lock_irqsave(&rq_lock, flags);
-	ret = sprintf(buf, "%u\n", rq_info.rq_poll_ms);
+	ret = snprintf(buf, MAX_LONG_SIZE, "%u\n",
+		       jiffies_to_msecs(rq_info.rq_poll_jiffies));
 	spin_unlock_irqrestore(&rq_lock, flags);
 
 	return ret;
 }
 
 static ssize_t store_run_queue_poll_ms(struct kobject *kobj,
-		struct kobj_attribute *attr, const char *buf, size_t count)
+				       struct kobj_attribute *attr,
+				       const char *buf, size_t count)
 {
-	int val = 0;
+	unsigned int val = 0;
 	unsigned long flags = 0;
 	static DEFINE_MUTEX(lock_poll_ms);
 
@@ -197,14 +134,8 @@ static ssize_t store_run_queue_poll_ms(struct kobject *kobj,
 
 	spin_lock_irqsave(&rq_lock, flags);
 	sscanf(buf, "%u", &val);
-	rq_info.rq_poll_ms = val;
+	rq_info.rq_poll_jiffies = msecs_to_jiffies(val);
 	spin_unlock_irqrestore(&rq_lock, flags);
-
-	if (val <= 0)
-		cancel_delayed_work(&rq_info.rq_work);
-	else
-		queue_delayed_work_on(0, rq_wq, &rq_info.rq_work,
-				msecs_to_jiffies(val));
 
 	mutex_unlock(&lock_poll_ms);
 
@@ -214,7 +145,10 @@ static ssize_t store_run_queue_poll_ms(struct kobject *kobj,
 static ssize_t show_def_timer_ms(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%u\n", rq_info.def_interval);
+	int64_t diff_ms;
+	diff_ms = ktime_to_ns(ktime_get()) - rq_info.def_start_time;
+	do_div(diff_ms, 1000 * 1000);
+	return snprintf(buf, MAX_LONG_SIZE, "%lld\n", diff_ms);
 }
 
 static ssize_t store_def_timer_ms(struct kobject *kobj,
@@ -223,20 +157,13 @@ static ssize_t store_def_timer_ms(struct kobject *kobj,
 	unsigned int val = 0;
 
 	sscanf(buf, "%u", &val);
-	rq_info.def_timer_ms = val;
+	rq_info.def_timer_jiffies = msecs_to_jiffies(val);
 
-	if (val <= 0)
-		cancel_delayed_work(&rq_info.def_timer_work);
-	else {
-		rq_info.def_start_time = ktime_to_ns(ktime_get());
-		queue_delayed_work(rq_wq, &rq_info.def_timer_work,
-				msecs_to_jiffies(val));
-	}
-
+	rq_info.def_start_time = ktime_to_ns(ktime_get());
 	return count;
 }
 
-#define MSM_SLEEP_RO_ATTRIB(att) ({ \
+#define TEGRA_RQ_STATS_RO_ATTRIB(att) ({ \
 		struct attribute *attrib = NULL; \
 		struct kobj_attribute *ptr = NULL; \
 		ptr = kzalloc(sizeof(struct kobj_attribute), GFP_KERNEL); \
@@ -249,7 +176,7 @@ static ssize_t store_def_timer_ms(struct kobject *kobj,
 		} \
 		attrib; })
 
-#define MSM_SLEEP_RW_ATTRIB(att) ({ \
+#define TEGRA_RQ_STATS_RW_ATTRIB(att) ({ \
 		struct attribute *attrib = NULL; \
 		struct kobj_attribute *ptr = NULL; \
 		ptr = kzalloc(sizeof(struct kobj_attribute), GFP_KERNEL); \
@@ -262,43 +189,49 @@ static ssize_t store_def_timer_ms(struct kobject *kobj,
 		} \
 		attrib; })
 
-
 static int init_rq_attribs(void)
 {
 	int i;
 	int err = 0;
-	const int attr_count = 5;
+	const int attr_count = 4;
 
 	struct attribute **attribs =
 		kzalloc(sizeof(struct attribute *) * attr_count, GFP_KERNEL);
 
-	if (!attribs)
+	if (!attribs) {
+		pr_err("%s: Allocate attribs failed!\n", __func__);
 		goto rel;
+	}
 
 	rq_info.rq_avg = 0;
-	rq_info.rq_poll_ms = 0;
 
-	attribs[0] = MSM_SLEEP_RW_ATTRIB(def_timer_ms);
-	attribs[1] = MSM_SLEEP_RO_ATTRIB(run_queue_avg);
-	attribs[2] = MSM_SLEEP_RW_ATTRIB(run_queue_poll_ms);
+	attribs[0] = TEGRA_RQ_STATS_RW_ATTRIB(def_timer_ms);
+	attribs[1] = TEGRA_RQ_STATS_RO_ATTRIB(run_queue_avg);
+	attribs[2] = TEGRA_RQ_STATS_RW_ATTRIB(run_queue_poll_ms);
 	attribs[3] = NULL;
 
 	for (i = 0; i < attr_count - 1 ; i++) {
-		if (!attribs[i])
-			goto rel;
+		if (!attribs[i]) {
+			pr_err("%s: Allocate attribs[%d] failed!\n", __func__, i);
+			goto rel2;
+		}
 	}
 
 	rq_info.attr_group = kzalloc(sizeof(struct attribute_group),
 						GFP_KERNEL);
-	if (!rq_info.attr_group)
-		goto rel;
+	if (!rq_info.attr_group) {
+		pr_err("%s: Allocate rq_info.attr_group failed!\n", __func__);
+		goto rel3;
+	}
 	rq_info.attr_group->attrs = attribs;
 
 	/* Create /sys/devices/system/cpu/cpu0/rq-stats/... */
 	rq_info.kobj = kobject_create_and_add("rq-stats",
 			&get_cpu_sysdev(0)->kobj);
-	if (!rq_info.kobj)
-		goto rel;
+	if (!rq_info.kobj) {
+		pr_err("%s: Create rq_info.kobj failed!\n", __func__);
+		goto rel3;
+	}
 
 	err = sysfs_create_group(rq_info.kobj, rq_info.attr_group);
 	if (err)
@@ -306,29 +239,36 @@ static int init_rq_attribs(void)
 	else
 		kobject_uevent(rq_info.kobj, KOBJ_ADD);
 
-	if (!err)
+	if (!err) {
+		rq_info.init = 1;
+		pr_info("%s: Initialize done. rq_info.init = %d\n",
+				__func__, rq_info.init);
 		return err;
+	}
 
-rel:
-	for (i = 0; i < attr_count - 1 ; i++)
-		kfree(attribs[i]);
-	kfree(attribs);
+rel3:
 	kfree(rq_info.attr_group);
 	kfree(rq_info.kobj);
+rel2:
+	for (i = 0; i < attr_count - 1; i++)
+		kfree(attribs[i]);
+rel:
+	kfree(attribs);
 
 	return -ENOMEM;
 }
 
-static int __init tegra_sleep_info_init(void)
+static int __init tegra_rq_stats_init(void)
 {
-	/* Register callback from idle for all cpus */
 	rq_wq = create_singlethread_workqueue("rq_stats");
 	BUG_ON(!rq_wq);
-	INIT_DELAYED_WORK_DEFERRABLE(&rq_info.rq_work, rq_work_fn);
-	INIT_DELAYED_WORK_DEFERRABLE(&rq_info.def_timer_work, def_work_fn);
-	init_rq_attribs();
-
-	return 0;
+	INIT_WORK(&rq_info.def_timer_work, def_work_fn);
+	spin_lock_init(&rq_lock);
+	rq_info.rq_poll_jiffies = DEFAULT_RQ_POLL_JIFFIES;
+	rq_info.def_timer_jiffies = DEFAULT_DEF_TIMER_JIFFIES;
+	rq_info.rq_poll_last_jiffy = 0;
+	rq_info.def_timer_last_jiffy = 0;
+	return init_rq_attribs();
 }
-late_initcall(tegra_sleep_info_init);
+late_initcall(tegra_rq_stats_init);
 

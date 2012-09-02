@@ -209,7 +209,6 @@ extern void htc_print_active_wake_locks();
  */
 void cpu_idle(void)
 {
-
     static bool bPrint_wake_lock = true;
     struct timespec ts;
     struct rtc_time tm;

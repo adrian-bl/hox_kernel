@@ -855,6 +855,10 @@ static void l2cap_sock_kill(struct sock *sk)
 static int l2cap_sock_shutdown(struct socket *sock, int how)
 {
 	struct sock *sk = sock->sk;
+
+	if (IS_ERR(sk))
+		return PTR_ERR(sk);
+
 	struct l2cap_chan *chan = l2cap_pi(sk)->chan;
 	int err = 0;
 

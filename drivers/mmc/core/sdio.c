@@ -914,7 +914,7 @@ static int mmc_sdio_suspend(struct mmc_host *host)
 		}
 	}
 
-#if defined CONFIG_MACH_ENDEAVORU || defined CONFIG_MACH_ENDEAVORTD
+#if defined(CONFIG_MACH_ENDEAVORU) || defined(CONFIG_MACH_ENDEAVORTD) || defined(CONFIG_MACH_ERAU)
 	if (!err && host->pm_flags & MMC_PM_KEEP_POWER && mmc_card_wake_sdio_irq(host)) {
 #else
 	if (!err && host->pm_flags & MMC_PM_KEEP_POWER) {
@@ -941,7 +941,7 @@ static int mmc_sdio_resume(struct mmc_host *host)
 	if (mmc_card_is_removable(host) || !mmc_card_is_powered_resumed(host)) {
 		err = mmc_sdio_init_card(host, host->ocr, host->card,
 								 (host->pm_flags & MMC_PM_KEEP_POWER));
-#if defined CONFIG_MACH_ENDEAVORU || defined CONFIG_MACH_ENDEAVORTD
+#if defined(CONFIG_MACH_ENDEAVORU) || defined(CONFIG_MACH_ENDEAVORTD) || defined(CONFIG_MACH_ERAU)
 	} else if (mmc_card_is_powered_resumed(host) && mmc_card_wake_sdio_irq(host)) {
 #else
 	} else if (mmc_card_is_powered_resumed(host)) {

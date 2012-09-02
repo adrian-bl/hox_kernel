@@ -1341,6 +1341,12 @@ static int iface_netdev_event_handler(struct notifier_block *nb,
 				      unsigned long event, void *ptr) {
 	struct net_device *dev = ptr;
 
+#ifdef CONFIG_HTC_NET_MODIFY
+    if (dev == NULL)
+        printk("[NET] dev is NULL in %s\n", __func__);
+        return NOTIFY_DONE;
+#endif
+
 	if (unlikely(module_passive))
 		return NOTIFY_DONE;
 
@@ -1650,7 +1656,7 @@ static bool qtaguid_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	}
 
 	if (IS_ERR(sk) || (!sk)) {
-		printk(KERN_ERR "[NET] sk is NULL in %s!\n", __func__);
+		printk(KERN_ERR "[NET] sk is NULL or out of range in %s!\n", __func__);
 		res = false;
 		goto ret_res;
 	}

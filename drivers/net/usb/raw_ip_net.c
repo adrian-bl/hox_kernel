@@ -830,7 +830,7 @@ static int usb_net_raw_ip_rx_urb_submit(struct baseband_usb *usb)
 	usb->usb.rx_urb = urb;
 	err = usb_submit_urb(urb, GFP_ATOMIC);
 	if (err < 0) {
-		pr_err("usb_submit_urb() failed - err %d\n", err);
+		pr_info("usb_submit_urb() failed - err %d\n", err);
 		usb->usb.rx_urb = (struct urb *) 0;
 		return err;
 	}
@@ -841,7 +841,16 @@ static int usb_net_raw_ip_rx_urb_submit(struct baseband_usb *usb)
 
 static void usb_net_raw_ip_rx_urb_comp(struct urb *urb)
 {
-	struct baseband_usb *usb = (struct baseband_usb *) urb->context;
+	struct baseband_usb *usb;
+	if (verbose) pr_info("usb_net_raw_ip_rx_urb_comp { urb %p\n", urb);
+
+	/* check input */
+	if (!urb) {
+		pr_err("no urb\n");
+		return;
+	}
+
+	usb = (struct baseband_usb *) urb->context;
 	int i = usb->baseband_index;
 
 	//+Sophia:0112
@@ -865,13 +874,6 @@ static void usb_net_raw_ip_rx_urb_comp(struct urb *urb)
 		NET_IP_ETHERTYPE,
 	};
 
-	if (verbose) pr_info("usb_net_raw_ip_rx_urb_comp { urb %p\n", urb);
-
-	/* check input */
-	if (!urb) {
-		pr_err("no urb\n");
-		return;
-	}
 	/* 77969-8 patch */
 	switch (urb->status) {
 	case 0:
@@ -946,6 +948,10 @@ static void usb_net_raw_ip_rx_urb_comp(struct urb *urb)
 
 	/* mark rx urb complete */
 	usb->usb.rx_urb = (struct urb *) 0;
+
+	/* do not submit urb if interface is suspending */
+	if (urb->status == -ENOENT)
+		return;
 
 	/* submit next rx urb */
 	usb_net_raw_ip_rx_urb_submit(usb);
@@ -1182,7 +1188,7 @@ static void usb_net_raw_ip_tx_urb_work(struct work_struct *work)
 
 static void usb_net_raw_ip_tx_urb_comp(struct urb *urb)
 {
-	struct baseband_usb *usb = (struct baseband_usb *) urb->context;
+	struct baseband_usb *usb;
 
 	if (verbose) pr_debug("usb_net_raw_ip_tx_urb_comp {\n");
 	/* 77969-7 patch */
@@ -1191,6 +1197,9 @@ static void usb_net_raw_ip_tx_urb_comp(struct urb *urb)
 		pr_err("no urb\n");
 		return;
 	}
+
+	usb = (struct baseband_usb *) urb->context;
+
 	/* 77969-8 patch */
 	switch (urb->status) {
 	case 0:

@@ -42,7 +42,7 @@
 #include <linux/usb/htc_info.h>
 
 #define USB_INFO(fmt, args...) \
-	pr_info(KERN_INFO "[USBOTG] " fmt, ## args)
+	printk(KERN_INFO "[USBOTG] " fmt, ## args)
 #define USB_ERR(fmt, args...) \
 	pr_err("[USBOTG] " fmt, ## args)
 
@@ -171,7 +171,7 @@ void tegra_start_host(struct tegra_otg_data *tegra)
 							  pdata->ehci_pdata);
 
 #if defined(CONFIG_CABLE_DETECT_ACCESSORY)
-		if (board_mfg_mode() == 2 /* recovery mode */) {
+		if (board_mfg_mode() == BOARD_MFG_MODE_RECOVERY /* recovery mode */) {
 			cable_detection_queue_recovery_host_work(HZ);
 		}
 #endif
@@ -204,7 +204,7 @@ static void irq_work(struct work_struct *work)
 
 	status = tegra->int_status;
 
-	if (tegra->rcv_host_en && board_mfg_mode() == 2 /* recovery mode */) {
+	if (tegra->rcv_host_en && board_mfg_mode() == BOARD_MFG_MODE_RECOVERY /* recovery mode */) {
 		if (from != OTG_STATE_A_HOST) {
 			if (tegra->int_status & USB_VBUS_INT_STATUS) {
 				if (status & USB_VBUS_STATUS)
@@ -282,7 +282,6 @@ static irqreturn_t tegra_otg_irq(int irq, void *data)
 		USB_INFO("otg_irq");
 		irq_otg_debug = 0;
 	}
-
 	spin_lock_irqsave(&tegra->lock, flags);
 
 	val = otg_readl(tegra, USB_PHY_WAKEUP);
@@ -502,6 +501,8 @@ static int tegra_otg_suspend(struct device *dev)
 }
 
 extern int tps80031_vbus_on;
+/* read tps80032 vbus_det pin value */
+extern int tps80032_read_vbus_detection(void);
 static void tegra_otg_resume(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
@@ -529,6 +530,11 @@ static void tegra_otg_resume(struct device *dev)
 	val = readl(tegra_otg->regs + USB_PHY_WAKEUP);
 	clk_disable(tegra_otg->clk);
 
+	/* for ENR_U #ITS16589
+	 * Power on from quickly boot mode tps80031_vbus_on sometimes was wrong
+	 * So read tps80032 vbus_det pin value and set to tps80031_vbus_on
+	 */
+	tps80031_vbus_on = tps80032_read_vbus_detection();
 	spin_lock_irqsave(&tegra_otg->lock, flags);
 	if (tps80031_vbus_on)
 		val |= USB_VBUS_STATUS;

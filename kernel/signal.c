@@ -1005,6 +1005,7 @@ int dying_processors_read_proc(char *page, char **start, off_t off,
 	return p - page;
 }
 
+
 static int send_signal(int sig, struct siginfo *info, struct task_struct *t,
 			int group)
 {
@@ -1017,6 +1018,7 @@ static int send_signal(int sig, struct siginfo *info, struct task_struct *t,
 		dying_pid_buf_idx++;
 		dying_pid_buf_idx = (dying_pid_buf_idx % MAX_DYING_PROC_COUNT);
 	}
+
 
 #ifdef CONFIG_PID_NS
 	from_ancestor_ns = si_fromuser(info) &&

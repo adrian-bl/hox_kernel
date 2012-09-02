@@ -303,9 +303,6 @@ config PM_OPP
 	  implementations a ready to use framework to manage OPPs.
 	  For more information, read <file:Documentation/power/opp.txt>
 
-config POWER_KEY_WAKEUP_FAILED_PATCH
-	bool "POWER_KEY_WAKEUP_FAILED_PATCH"
-
 config SUSPEND_TIME
 	bool "Log time spent in suspend"
 	---help---
