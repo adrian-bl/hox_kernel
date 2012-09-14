@@ -488,14 +488,7 @@ int __init endeavoru_pinmux_init(void)
 	tegra_drive_pinmux_config_table(endeavoru_drive_pinmux,
 					ARRAY_SIZE(endeavoru_drive_pinmux));
 
-	if (machine_is_erau())
-	{
-		// era#u XA == end#u XE
-		if (htc_get_pcbid_info() >= PROJECT_PHASE_XA)
-			board_id = PROJECT_PHASE_XE;
-	}
-	else // default case, included machine_is_endeavoru()
-		board_id = htc_get_pcbid_info();
+	board_id = htc_get_pcbid_info();
 
 	if (board_id == PROJECT_PHASE_EVM) // EVM
 		tegra_pinmux_config_table(endeavoru_pinmux_EVM,
