@@ -191,18 +191,6 @@ static int suspend_enter(suspend_state_t state)
 	arch_suspend_enable_irqs();
 	BUG_ON(irqs_disabled());
 
-#ifdef CONFIG_POWER_KEY_WAKEUP_FAILED_PATCH
-
-Platform_wake:
-	if (suspend_ops->wake)
-		suspend_ops->wake();
-
-	dpm_resume_noirq(PMSG_RESUME);
-
-Enable_cpus:
-	   enable_nonboot_cpus();
-#else
-	printk("POWER_KEY_WAKEUP_FAILED_PATCH  is not defined \n");
 
 Enable_cpus:
 	   enable_nonboot_cpus();
@@ -212,7 +200,7 @@ Platform_wake:
 		suspend_ops->wake();
 
 	dpm_resume_noirq(PMSG_RESUME);
-#endif
+
  Platform_finish:
 	if (suspend_ops->finish)
 		suspend_ops->finish();
@@ -281,6 +269,52 @@ static void suspend_finish(void)
 	pm_restore_console();
 }
 
+struct timeout_data
+{
+	struct timer_list* timer;
+	unsigned long timeout;
+	const char* fname;
+	struct task_struct *tsk;
+};
+
+static void timeout_warning(unsigned long data)
+{
+	struct timeout_data* d = (struct timeout_data*) data;
+
+	pr_warn("suspend: %s stuck for %lu sec(s), dump call stack:\n",
+			d->fname, d->timeout);
+	show_stack(d->tsk, NULL);
+
+	mod_timer(d->timer,
+			jiffies + msecs_to_jiffies(1000 * d->timeout));
+}
+
+#define warn_timeout(secs, stat)               \
+do {                                           \
+	struct timer_list _timer;                  \
+	struct timeout_data _data;                 \
+                                               \
+	BUG_ON(in_interrupt());                    \
+	init_timer_on_stack(&_timer);              \
+	_timer.function = timeout_warning;         \
+                                               \
+	_data.timer     = &_timer;                 \
+	_data.timeout   = secs;                    \
+	_data.fname     = __func__;                \
+	_data.tsk       = current;                 \
+                                               \
+	_timer.data     = (unsigned long) &_data;  \
+	_timer.expires  = jiffies +                \
+		msecs_to_jiffies(1000 * secs);         \
+	add_timer(&_timer);                        \
+                                               \
+	({stat;});                                 \
+                                               \
+	del_timer_sync(&_timer);                   \
+	destroy_timer_on_stack(&_timer);           \
+} while (0)
+
+#define SUSPEND_PREPARE_TIMEOUT (30)
 /**
  *	enter_state - Do common work of entering low-power state.
  *	@state:		pm_state structure for state we're entering.
@@ -307,7 +341,10 @@ int enter_state(suspend_state_t state)
 	printk("done.\n");
 
 	pr_debug("PM: Preparing system for %s sleep\n", pm_states[state]);
-	error = suspend_prepare();
+	warn_timeout(SUSPEND_PREPARE_TIMEOUT,
+			error = suspend_prepare()
+		);
+
 	if (error)
 		goto Unlock;
 
