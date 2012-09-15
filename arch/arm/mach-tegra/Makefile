@@ -257,4 +257,4 @@ obj-y                                   += nvdumper.o
 obj-y 					+= htc_util.o
 obj-y 					+= pokecpu.o
 
-obj-y                                   += tegra_sleep_stats.o
+obj-y                                   += tegra_rq_stats.o

@@ -295,8 +295,6 @@ index 37452e8..f800899 100644
  obj-y 					+= htc_util.o
  obj-y 					+= pokecpu.o
  
--obj-y                                   += tegra_sleep_stats.o
-+obj-y                                   += tegra_rq_stats.o
 diff --git a/arch/arm/mach-tegra/baseband-xmm-power.c b/arch/arm/mach-tegra/baseband-xmm-power.c
 index 9481852..3ed080e 100644
 --- a/arch/arm/mach-tegra/baseband-xmm-power.c
@@ -6063,19 +6061,6 @@ index f99d875..5166c18 100644
  				if (htc_get_pcbid_info() <= PROJECT_PHASE_XC) {
  					cpu_speedo_id = 1;
  					soc_speedo_id = 1;
-diff --git a/arch/arm/mach-tegra/tegra3_thermal.c b/arch/arm/mach-tegra/tegra3_thermal.c
-index 95459f0..009666b 100644
---- a/arch/arm/mach-tegra/tegra3_thermal.c
-+++ b/arch/arm/mach-tegra/tegra3_thermal.c
-@@ -194,7 +194,7 @@ void tegra_thermal_alert(void *data)
- #ifdef CONFIG_TEGRA_THERMAL_SYSFS
- 	if (thermal->thz) {
- 		if (!thermal->thz->passive) {
--			printk(KERN_INFO "[TMS] throttle start");
-+			printk(KERN_INFO "[TMS] throttle start\n");
- 			thermal_zone_device_update(thermal->thz);
- 		}
- 	}
 diff --git a/arch/arm/mach-tegra/tegra_flashlight.c b/arch/arm/mach-tegra/tegra_flashlight.c
 index 9f0d581..97863e3 100644
 --- a/arch/arm/mach-tegra/tegra_flashlight.c
@@ -15114,43 +15099,6 @@ index 5e1e72a..4f9e62a 100644
  };
  
  struct nct1008_data {
-diff --git a/include/linux/rq_stats.h b/include/linux/rq_stats.h
-new file mode 100644
-index 0000000..e04063f
---- /dev/null
-+++ b/include/linux/rq_stats.h
-@@ -0,0 +1,31 @@
-+/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
-+ *
-+ * This program is free software; you can redistribute it and/or modify
-+ * it under the terms of the GNU General Public License version 2 and
-+ * only version 2 as published by the Free Software Foundation.
-+ *
-+ * This program is distributed in the hope that it will be useful,
-+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
-+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-+ * GNU General Public License for more details.
-+ *
-+ */
-+
-+struct rq_data {
-+	unsigned int rq_avg;
-+	unsigned long rq_poll_jiffies;
-+	unsigned long def_timer_jiffies;
-+	unsigned long rq_poll_last_jiffy;
-+	unsigned long rq_poll_total_jiffies;
-+	unsigned long def_timer_last_jiffy;
-+	unsigned int def_interval;
-+	int64_t def_start_time;
-+	struct attribute_group *attr_group;
-+	struct kobject *kobj;
-+	struct work_struct def_timer_work;
-+	int init;
-+};
-+
-+extern spinlock_t rq_lock;
-+extern struct rq_data rq_info;
-+extern struct workqueue_struct *rq_wq;
 diff --git a/include/linux/suspend.h b/include/linux/suspend.h
 index 69e4518..ec3b055 100644
 --- a/include/linux/suspend.h
