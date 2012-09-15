@@ -6067,6 +6067,12 @@ static void migrate_tasks(unsigned int dead_cpu)
 	 */
 	rq->stop = NULL;
 
+	/*
+	 * Ensure rt_rq is not throttled so its threads can be migrated using
+	 * pick_next_task_rt
+	 */
+	rq->rt.rt_throttled = 0;
+
 	for ( ; ; ) {
 		/*
 		 * There's this thread running, bail when that's the only
@@ -7593,7 +7599,6 @@ static int __build_sched_domains(const struct cpumask *cpu_map,
 	}
 #endif
 
-	rcu_read_lock();
 	/* Attach the domains */
 	for_each_cpu(i, cpu_map) {
 #ifdef CONFIG_SCHED_SMT
@@ -7607,7 +7612,6 @@ static int __build_sched_domains(const struct cpumask *cpu_map,
 #endif
 		cpu_attach_domain(sd, d.rd, i);
 	}
-	rcu_read_unlock();
 
 	d.sched_group_nodes = NULL; /* don't free this we still need it */
 	__free_domain_allocs(&d, sa_tmpmask, cpu_map);
@@ -7708,14 +7712,9 @@ static void detach_destroy_domains(const struct cpumask *cpu_map)
 	static DECLARE_BITMAP(tmpmask, CONFIG_NR_CPUS);
 	int i;
 
-	rcu_read_lock();
 	for_each_cpu(i, cpu_map)
 		cpu_attach_domain(NULL, &def_root_domain, i);
-	rcu_read_unlock();
-
-#ifdef CONFIG_NUMA
-#error "NUMA not supported with this change"
-#endif
+	synchronize_sched_expedited();
 	arch_destroy_sched_domains(cpu_map, to_cpumask(tmpmask));
 }
 
