@@ -313,7 +313,7 @@ ssize_t hci_tty_read(struct file *file, char __user *data, size_t size,
 
 	/* Forward the data to the user */
 	if (skb->len >= size) {
-		pr_err("FIONREAD not done before read\n");
+		pr_err("FIONREAD not done before read: %d >= %d\n", skb->len, size);
 		return -ENOMEM;
 	} else {
 		/* returning skb */
